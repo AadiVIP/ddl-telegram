@@ -4,9 +4,18 @@ const { Low } = require('lowdb');
 const { JSONFile } = require('lowdb/node');
 const { nanoid } = require('nanoid');
 
-// Initialize database with proper defaults
+// Initialize database with sync check
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
+
+// Immediately initialize database before anything else
+(async () => {
+  await db.read();
+  if (!db.data || typeof db.data !== 'object') {
+    db.data = { files: {} };
+    await db.write();
+  }
+})();
 
 // Get environment variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -16,18 +25,8 @@ const RENDER_URL = process.env.RENDER_URL;
 const app = express();
 const bot = new Telegraf(BOT_TOKEN);
 
-// Database initialization
-const initializeDB = async () => {
-  await db.read();
-  db.data = db.data || { files: {} };
-  if (!db.data.files) db.data.files = {};
-  await db.write();
-};
-
 // Handle file messages
 bot.on(['document', 'photo', 'video', 'audio'], async (ctx) => {
-  await initializeDB();
-  
   const file = ctx.message.document || 
               ctx.message.photo?.pop() || 
               ctx.message.video || 
@@ -54,7 +53,6 @@ bot.on(['document', 'photo', 'video', 'audio'], async (ctx) => {
 
 // Redirect endpoint
 app.get('/:slug', async (req, res) => {
-  await initializeDB();
   const fileData = db.data.files[req.params.slug];
 
   if (!fileData) {
@@ -72,13 +70,11 @@ app.get('/:slug', async (req, res) => {
 
 // Start services
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-  await initializeDB(); // Initialize DB before starting
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  await bot.launch();
+  bot.launch();
   console.log('Bot started');
 });
 
-// Handle shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

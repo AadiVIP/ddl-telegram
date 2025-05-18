@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { Low } = require('lowdb');
@@ -9,9 +8,13 @@ const { nanoid } = require('nanoid');
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
+// Get environment variables from Render
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const RENDER_URL = process.env.RENDER_URL;
+
 // Initialize Express and Telegraf
 const app = express();
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const bot = new Telegraf(BOT_TOKEN);
 
 // Database structure
 const initializeDB = async () => {
@@ -42,7 +45,7 @@ bot.on(['document', 'photo', 'video', 'audio'], async (ctx) => {
   
   await db.write();
 
-  const ddlLink = `${process.env.RENDER_URL}/${slug}`;
+  const ddlLink = `${RENDER_URL}/${slug}`;
   ctx.replyWithHTML(`🌐 <b>Permanent Download Link</b>:\n\n` +
                     `<a href="${ddlLink}">${ddlLink}</a>\n\n` +
                     `📁 File: ${db.data.files[slug].original_name}`);

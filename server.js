@@ -53,10 +53,9 @@ const handleFile = async (ctx) => {
       .replace(/[^a-zA-Z0-9_.-]/g, '_')
       .replace(/\s+/g, '_')
       .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '') // Trim underscores
-      .substring(0, 255); // Limit length
+      .replace(/^_+|_+$/g, '')
+      .substring(0, 255);
 
-    // Handle empty filename case
     if (!filename) filename = `unknown_file_${Date.now()}`;
 
     // Get file extension
@@ -90,8 +89,9 @@ const handleFile = async (ctx) => {
 // Handle all message types including forwards
 bot.on(['document', 'photo', 'video', 'audio'], handleFile);
 bot.on('media_group', async (ctx) => {
-  await Promise.all(ctx.message.media_group.map(msg => 
-    handleFile({ ...ctx, message: msg })
+  await Promise.all(
+    ctx.message.media_group.map(msg => 
+      handleFile({ ...ctx, message: msg })
   );
 });
 

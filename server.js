@@ -30,7 +30,7 @@ setInterval(() => {
   fs.writeFileSync(DB_FILE, JSON.stringify(fileStore));
 }, 30000);
 
-// Universal file handler for forwarded files
+// Universal file handler
 const handleFile = async (ctx) => {
   try {
     const file = ctx.message.document || 
@@ -40,25 +40,20 @@ const handleFile = async (ctx) => {
 
     if (!file) return;
 
-    // Get full file details from Telegram
     const fileInfo = await bot.telegram.getFile(file.file_id);
     
-    // Generate filename from multiple sources
     let filename = file.file_name || 
                   fileInfo.file_path?.split('/').pop() || 
                   `file_${Date.now()}`;
 
-    // Clean filename
     filename = filename
       .replace(/[^a-zA-Z0-9_.-]/g, '_')
       .replace(/\s+/g, '_')
       .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
       .substring(0, 255);
 
     if (!filename) filename = `unknown_file_${Date.now()}`;
 
-    // Get file extension
     let ext = filename.split('.').pop();
     if (!ext || ext === filename) {
       ext = fileInfo.file_path?.split('.').pop() || 
@@ -86,12 +81,13 @@ const handleFile = async (ctx) => {
   }
 };
 
-// Handle all message types including forwards
+// Fixed media group handler
 bot.on(['document', 'photo', 'video', 'audio'], handleFile);
 bot.on('media_group', async (ctx) => {
   await Promise.all(
     ctx.message.media_group.map(msg => 
       handleFile({ ...ctx, message: msg })
+    ) // Correctly closed parenthesis
   );
 });
 
@@ -103,7 +99,6 @@ app.get('/:slug', async (req, res) => {
 
     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
     
-    // Stream with proper headers
     const response = await axios.get(fileUrl, { responseType: 'stream' });
     res.setHeader('Content-Disposition', `attachment; filename="${fileData.name}"`);
     res.setHeader('Content-Type', fileData.mime_type);

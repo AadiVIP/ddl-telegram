@@ -8,10 +8,18 @@ const { nanoid } = require('nanoid');
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
+// Initialize database before anything else
+(async () => {
+  await db.read();
+  db.data ||= { files: {} };
+  await db.write();
+})();
+
 // Get environment variables from Render
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const RENDER_URL = process.env.RENDER_URL;
 
+// Rest of your existing code remains the same...
 // Initialize Express and Telegraf
 const app = express();
 const bot = new Telegraf(BOT_TOKEN);

@@ -2,10 +2,8 @@ const express = require('express');
 const { Telegraf } = require('telegraf');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
 
-// Simple file-based storage
 const DB_FILE = 'storage.json';
 let fileStore = {};
 
@@ -20,11 +18,9 @@ const initializeStorage = () => {
   }
 };
 
-// Get environment variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const RENDER_URL = process.env.RENDER_URL;
 
-// Initialize services
 initializeStorage();
 const app = express();
 const bot = new Telegraf(BOT_TOKEN);
@@ -34,65 +30,75 @@ setInterval(() => {
   fs.writeFileSync(DB_FILE, JSON.stringify(fileStore));
 }, 30000);
 
-// Handle files
-bot.on(['document', 'photo', 'video', 'audio'], (ctx) => {
-  const file = ctx.message.document || 
-              ctx.message.photo?.pop() || 
-              ctx.message.video || 
-              ctx.message.audio;
+// Handle all file types including forwarded
+const handleFile = async (ctx) => {
+  try {
+    const file = ctx.message.document || 
+                ctx.message.photo?.pop() || 
+                ctx.message.video || 
+                ctx.message.audio;
 
-  const slug = nanoid(8);
-  
-  // Get original filename with proper sanitization
-  let filename = 'file';
-  if (file.file_name) {
-    filename = file.file_name
-      .replace(/[^a-zA-Z0-9_.-]/g, '_') // Replace special chars
-      .replace(/\s+/g, '_');            // Replace spaces
-  } else {
-    // Generate filename with extension if available
-    const ext = file.mime_type?.split('/')[1] || 'dat';
-    filename = `file_${Date.now()}.${ext}`;
+    if (!file) return;
+
+    const slug = nanoid(8);
+    const originalFile = await bot.telegram.getFile(file.file_id);
+    
+    // Get original filename or generate one
+    let filename = file.file_name || `file_${Date.now()}`;
+    filename = filename
+      .replace(/[^a-zA-Z0-9_.-]/g, '_')
+      .replace(/\s+/g, '_');
+
+    // Preserve extension from MIME type if missing
+    if (!filename.includes('.')) {
+      const ext = originalFile.file_path?.split('.').pop() || 
+                 file.mime_type?.split('/')[1] || 
+                 'dat';
+      filename += `.${ext}`;
+    }
+
+    fileStore.files[slug] = {
+      file_id: file.file_id,
+      file_path: originalFile.file_path,
+      name: filename,
+      mime_type: file.mime_type,
+      timestamp: Date.now()
+    };
+
+    const ddlLink = `${RENDER_URL}/${slug}`;
+    ctx.replyWithHTML(`✅ <b>Permanent Link</b>:\n<a href="${ddlLink}">${filename}</a>`);
+  } catch (error) {
+    console.error('Error handling file:', error);
+    ctx.reply('❌ Failed to create link. Please send the file directly (not forwarded).');
   }
+};
 
-  fileStore.files[slug] = {
-    file_id: file.file_id,
-    name: filename,
-    mime_type: file.mime_type,
-    timestamp: Date.now()
-  };
-
-  const ddlLink = `${RENDER_URL}/${slug}`;
-  ctx.replyWithHTML(`🌐 <b>Download Link</b>:\n<a href="${ddlLink}">${ddlLink}</a>`);
+// Handle media groups and single files
+bot.on(['document', 'photo', 'video', 'audio'], handleFile);
+bot.on('media_group', async (ctx) => {
+  await Promise.all(ctx.message.media_group.map(msg => handleFile({ ...ctx, message: msg })));
 });
 
-// File download endpoint
+// Download endpoint
 app.get('/:slug', async (req, res) => {
-  const fileData = fileStore.files[req.params.slug];
-  
-  if (!fileData) return res.status(404).send('File not found');
-  
   try {
-    const fileLink = await bot.telegram.getFileLink(fileData.file_id);
-    const response = await axios({
-      method: 'GET',
-      url: fileLink.href,
-      responseType: 'stream'
-    });
+    const fileData = fileStore.files[req.params.slug];
+    if (!fileData) return res.status(404).send('File not found');
 
-    // Set proper headers
+    const fileLink = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
+    
+    // Stream file with proper headers
+    const response = await axios.get(fileLink, { responseType: 'stream' });
     res.setHeader('Content-Disposition', `attachment; filename="${fileData.name}"`);
     res.setHeader('Content-Type', fileData.mime_type || 'application/octet-stream');
-    
-    // Stream file directly from Telegram
     response.data.pipe(res);
-    
+
   } catch (error) {
-    res.status(410).send('Link expired');
+    console.error('Download error:', error);
+    res.status(410).send('Link expired or invalid');
   }
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

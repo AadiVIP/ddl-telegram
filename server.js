@@ -30,7 +30,7 @@ setInterval(() => {
   fs.writeFileSync(DB_FILE, JSON.stringify(fileStore));
 }, 30000);
 
-// Handle all file types including forwarded
+// Universal file handler
 const handleFile = async (ctx) => {
   try {
     const file = ctx.message.document || 
@@ -40,40 +40,48 @@ const handleFile = async (ctx) => {
 
     if (!file) return;
 
-    const slug = nanoid(8);
-    const originalFile = await bot.telegram.getFile(file.file_id);
+    // Get full file details from Telegram
+    const fileInfo = await bot.telegram.getFile(file.file_id);
     
-    // Get original filename or generate one
-    let filename = file.file_name || `file_${Date.now()}`;
+    // Extract filename from multiple sources
+    let filename = file.file_name || 
+                  fileInfo.file_path?.split('/').pop() || 
+                  `file_${Date.now()}`;
+
+    // Clean filename and get extension
     filename = filename
       .replace(/[^a-zA-Z0-9_.-]/g, '_')
-      .replace(/\s+/g, '_');
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_');
 
-    // Preserve extension from MIME type if missing
+    // Ensure file extension
     if (!filename.includes('.')) {
-      const ext = originalFile.file_path?.split('.').pop() || 
+      const ext = fileInfo.file_path?.split('.').pop() || 
                  file.mime_type?.split('/')[1] || 
                  'dat';
       filename += `.${ext}`;
     }
 
+    const slug = nanoid(8);
+    
     fileStore.files[slug] = {
       file_id: file.file_id,
-      file_path: originalFile.file_path,
+      file_path: fileInfo.file_path,
       name: filename,
       mime_type: file.mime_type,
       timestamp: Date.now()
     };
 
     const ddlLink = `${RENDER_URL}/${slug}`;
-    ctx.replyWithHTML(`✅ <b>Permanent Link</b>:\n<a href="${ddlLink}">${filename}</a>`);
+    ctx.replyWithHTML(`🔗 <b>Permanent Download Link</b>:\n<a href="${ddlLink}">${filename}</a>`);
+
   } catch (error) {
-    console.error('Error handling file:', error);
-    ctx.reply('❌ Failed to create link. Please send the file directly (not forwarded).');
+    console.error('File handling error:', error);
+    ctx.reply('❌ Error: Could not create link. Please send the file directly (not as forward)');
   }
 };
 
-// Handle media groups and single files
+// Handle all message types
 bot.on(['document', 'photo', 'video', 'audio'], handleFile);
 bot.on('media_group', async (ctx) => {
   await Promise.all(ctx.message.media_group.map(msg => handleFile({ ...ctx, message: msg })));
@@ -85,10 +93,10 @@ app.get('/:slug', async (req, res) => {
     const fileData = fileStore.files[req.params.slug];
     if (!fileData) return res.status(404).send('File not found');
 
-    const fileLink = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
     
-    // Stream file with proper headers
-    const response = await axios.get(fileLink, { responseType: 'stream' });
+    // Stream with proper headers
+    const response = await axios.get(fileUrl, { responseType: 'stream' });
     res.setHeader('Content-Disposition', `attachment; filename="${fileData.name}"`);
     res.setHeader('Content-Type', fileData.mime_type || 'application/octet-stream');
     response.data.pipe(res);

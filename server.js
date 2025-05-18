@@ -4,30 +4,23 @@ const { Low } = require('lowdb');
 const { JSONFile } = require('lowdb/node');
 const { nanoid } = require('nanoid');
 
-// Initialize database
+// Initialize database with proper defaults
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
-// Initialize database before anything else
-(async () => {
-  await db.read();
-  db.data ||= { files: {} };
-  await db.write();
-})();
-
-// Get environment variables from Render
+// Get environment variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const RENDER_URL = process.env.RENDER_URL;
 
-// Rest of your existing code remains the same...
 // Initialize Express and Telegraf
 const app = express();
 const bot = new Telegraf(BOT_TOKEN);
 
-// Database structure
+// Database initialization
 const initializeDB = async () => {
   await db.read();
-  db.data ||= { files: {} };
+  db.data = db.data || { files: {} };
+  if (!db.data.files) db.data.files = {};
   await db.write();
 };
 
@@ -80,6 +73,7 @@ app.get('/:slug', async (req, res) => {
 // Start services
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
+  await initializeDB(); // Initialize DB before starting
   console.log(`Server running on port ${PORT}`);
   await bot.launch();
   console.log('Bot started');

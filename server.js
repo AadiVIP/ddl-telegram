@@ -3,6 +3,7 @@ const { Telegraf } = require('telegraf');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 // Simple file-based storage
 const DB_FILE = 'storage.json';
@@ -41,11 +42,23 @@ bot.on(['document', 'photo', 'video', 'audio'], (ctx) => {
               ctx.message.audio;
 
   const slug = nanoid(8);
-  const filename = file.file_name || `file_${Date.now()}`;
+  
+  // Get original filename with proper sanitization
+  let filename = 'file';
+  if (file.file_name) {
+    filename = file.file_name
+      .replace(/[^a-zA-Z0-9_.-]/g, '_') // Replace special chars
+      .replace(/\s+/g, '_');            // Replace spaces
+  } else {
+    // Generate filename with extension if available
+    const ext = file.mime_type?.split('/')[1] || 'dat';
+    filename = `file_${Date.now()}.${ext}`;
+  }
 
   fileStore.files[slug] = {
     file_id: file.file_id,
     name: filename,
+    mime_type: file.mime_type,
     timestamp: Date.now()
   };
 
@@ -53,7 +66,7 @@ bot.on(['document', 'photo', 'video', 'audio'], (ctx) => {
   ctx.replyWithHTML(`🌐 <b>Download Link</b>:\n<a href="${ddlLink}">${ddlLink}</a>`);
 });
 
-// Redirect endpoint
+// File download endpoint
 app.get('/:slug', async (req, res) => {
   const fileData = fileStore.files[req.params.slug];
   
@@ -61,7 +74,19 @@ app.get('/:slug', async (req, res) => {
   
   try {
     const fileLink = await bot.telegram.getFileLink(fileData.file_id);
-    res.redirect(fileLink.href);
+    const response = await axios({
+      method: 'GET',
+      url: fileLink.href,
+      responseType: 'stream'
+    });
+
+    // Set proper headers
+    res.setHeader('Content-Disposition', `attachment; filename="${fileData.name}"`);
+    res.setHeader('Content-Type', fileData.mime_type || 'application/octet-stream');
+    
+    // Stream file directly from Telegram
+    response.data.pipe(res);
+    
   } catch (error) {
     res.status(410).send('Link expired');
   }

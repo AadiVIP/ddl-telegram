@@ -30,22 +30,14 @@ setInterval(() => {
   fs.writeFileSync(DB_FILE, JSON.stringify(fileStore));
 }, 30000);
 
+// File handler function
 const handleFile = async (ctx) => {
   try {
     const isForwarded = !!ctx.message.forward_date;
-    let file = null;
-
-    if (isForwarded) {
-      file = ctx.message.document || 
-            ctx.message.photo?.pop() || 
-            ctx.message.video || 
-            ctx.message.audio;
-    } else {
-      file = ctx.message.document || 
-            ctx.message.photo?.pop() || 
-            ctx.message.video || 
-            ctx.message.audio;
-    }
+    let file = ctx.message.document || 
+               ctx.message.photo?.pop() || 
+               ctx.message.video || 
+               ctx.message.audio;
 
     if (!file) return ctx.reply('❌ No file found');
 
@@ -81,27 +73,31 @@ const handleFile = async (ctx) => {
   }
 };
 
-// Fixed media group handler with proper parentheses
+// Message handlers
 bot.on(['document', 'photo', 'video', 'audio'], handleFile);
 bot.on('media_group', async (ctx) => {
   await Promise.all(
     ctx.message.media_group.map(msg => 
       handleFile({ ...ctx, message: msg })
-    ) // Correct closing parenthesis
+    )
   );
 });
 
-bot.command('ddl', async (ctx) => {
-  if (ctx.message.reply_to_message) {
-    await handleFile({
-      ...ctx,
-      message: ctx.message.reply_to_message
-    });
-  }
-});
-
+// Webhook setup
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  bot.launch();
+app.listen(PORT, async () => {
+  try {
+    // Cleanup previous webhook
+    await bot.telegram.deleteWebhook();
+    
+    // Set new webhook
+    await bot.telegram.setWebhook(`${RENDER_URL}/webhook`);
+    
+    // Configure webhook endpoint
+    app.use(bot.webhookCallback('/webhook'));
+    console.log(`🚀 Server running on port ${PORT}`);
+  } catch (error) {
+    console.error('Webhook setup failed:', error);
+    process.exit(1);
+  }
 });
